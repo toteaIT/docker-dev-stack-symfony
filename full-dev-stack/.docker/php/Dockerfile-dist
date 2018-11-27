@@ -1,0 +1,29 @@
+FROM php_dev_temp
+
+ARG APP_ENV
+ENV COMPOSER_ALLOW_SUPERUSER=1
+COPY composer.lock composer.json /var/www/html/
+RUN wget https://getcomposer.org/composer.phar 2&> /dev/null     && \
+    if [ "x$APP_ENV" = "xprod" ]; then                              \
+        php composer.phar install --no-dev --no-progress  --ansi;   \
+    else                                                            \
+        php composer.phar install --no-progress  --ansi;            \
+        php bin/phpunit 2&> /dev/null;                              \
+        touch .env;                                                 \
+    fi                                                           && \
+    php composer.phar clear-cache                                && \
+    rm composer.phar
+
+COPY . /var/www/html/
+
+# Cache Optimization Level 2/A - Production environment only (needs OPcache)
+RUN if [ "x$APP_ENV" = "xprod" ]; then                                  \
+    wget https://getcomposer.org/composer.phar 2&> /dev/null;           \
+    php composer.phar dump-autoload --no-dev --classmap-authoritative;  \
+    rm composer.phar;                                                   \
+    php bin/console cache:clear --no-debug;                             \
+    fi
+
+RUN rm -rf .env.* .docker && chown -R www-data:www-data var
+
+CMD ["php-fpm"]

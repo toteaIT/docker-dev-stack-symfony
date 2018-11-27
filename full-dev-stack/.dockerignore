@@ -1,0 +1,14 @@
+#.docker
+.git
+.idea
+.env
+node_modules
+#vendor
+var
+#var/cache/dev/**
+#var/cache/prod/**
+#var/log/**
+docker-compose.yml
+docker-compose-prod.yml
+.dockerignore
+.gitignore

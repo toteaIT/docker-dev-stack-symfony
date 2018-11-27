@@ -1,0 +1,71 @@
+# 1. git init (in your app directory)
+# 2. git remote add dockerimage git@gitlab.com:totea-docker-images/php-for-symfony.git
+# 3. git pull dockerimage master
+# 4. docker-compose build
+# 5. COMPOSE_PROJECT_NAME=p1 docker-compose up -d
+# 6. copy your Symfony project into actual directory (where docker-compose.yml is) or create new project with composer
+
+version: '3.5'
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: ${COMPOSE_PROJECT_NAME}_nginx
+    volumes:
+      - .docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - .:/var/www/html
+    ports:
+      - 80:80
+    networks:
+      - default
+
+  php:
+    build:
+      context: .
+      dockerfile: .docker/php/Dockerfile
+      args:
+        - APP_ENV
+    image: totea/php-for-symfony:fpm-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}_php
+    volumes:
+      - .:/var/www/html
+    environment:
+      - DATABASE_URL=mysql://develop_insecure:develop_insecure@mysql:3306/develop_${COMPOSE_PROJECT_NAME}
+    networks:
+      default:
+        aliases:
+          - fpm
+
+  mysql:
+    image: mysql
+    command: "--default-authentication-plugin=mysql_native_password"
+    container_name: ${COMPOSE_PROJECT_NAME}_mysql
+    volumes:
+      - mysql-data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: develop_${COMPOSE_PROJECT_NAME}
+      MYSQL_USER: develop_insecure
+      MYSQL_PASSWORD: develop_insecure
+    networks:
+      - default
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: ${COMPOSE_PROJECT_NAME}_phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    ports:
+      - 8080:80
+    networks:
+      - default
+
+networks:
+    default:
+        name: ${COMPOSE_PROJECT_NAME}
+        driver: bridge
+
+volumes:
+  mysql-data:
+    name: ${COMPOSE_PROJECT_NAME}-mysql-data

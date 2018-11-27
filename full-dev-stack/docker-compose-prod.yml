@@ -1,0 +1,45 @@
+# Run this file to simulate production environment in development (e.g. on your dev computer)
+
+# Usage:
+# COMPOSE_PROJECT_NAME=p1 docker-compose -f docker-compose-prod.yml build
+
+version: '3.5'
+
+services:
+  nginx:
+    build:
+      context: .
+      dockerfile: .docker/nginx/Dockerfile-prod
+    image: ${COMPOSE_PROJECT_NAME}_nginx
+    ports:
+      - 8081:80
+    networks:
+      - default
+
+  php-temp:
+    build:
+      context: .
+      dockerfile: .docker/php/Dockerfile
+      args:
+        - APP_ENV=prod
+    image: php_dev_temp
+
+  php:
+    build:
+      context: .
+      dockerfile: .docker/php/Dockerfile-prod
+      args:
+        - APP_ENV=prod
+    image: ${COMPOSE_PROJECT_NAME}_php
+    environment:
+      - APP_ENV=prod
+      - DATABASE_URL=mysql://develop_insecure:develop_insecure@mysql:3306/develop_${COMPOSE_PROJECT_NAME}
+    networks:
+      default:
+        aliases:
+          - fpm
+
+networks:
+  default:
+    name: ${COMPOSE_PROJECT_NAME}_prod
+    driver: bridge

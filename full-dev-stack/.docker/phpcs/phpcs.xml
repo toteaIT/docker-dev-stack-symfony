@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<ruleset name="PSR12">
+    <description>The PSR12 coding standard for Symfony project.</description>
+    <rule ref="PSR12"/>
+
+    <file>public</file>
+    <file>src</file>
+    <file>templates</file>
+    <file>tests</file>
+
+    <exclude-pattern>public/index.php</exclude-pattern>
+    <exclude-pattern>src/Kernel.php</exclude-pattern>
+    <exclude-pattern>var</exclude-pattern>
+    <exclude-pattern>vendor</exclude-pattern>
+
+</ruleset>

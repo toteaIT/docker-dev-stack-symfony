@@ -1,0 +1,172 @@
+variables:
+  PROJECT: project.com
+  DEVOPS_SERVER: 111.111.111.111
+  DEVOPS_SERVER_USERNAME: user with SSH and bash access to the dev server
+  GIT_STRATEGY: none
+  WWW_DATA_DIR: /var/www/html
+
+stages:
+  - build
+  - test
+  - deploy
+
+build:
+  stage: build
+  image: docker:stable-git
+  services:
+    - docker:stable-dind
+  variables:
+    GIT_STRATEGY: fetch
+  script:
+    - sed -i '/^CMD/d' .docker/php/Dockerfile
+    - sed -i '/^FROM/d' .docker/php/Dockerfile-dist
+    - sed -n w".docker/php/Dockerfile-dist-temp" .docker/php/Dockerfile .docker/php/Dockerfile-dist
+    - mv .docker/php/Dockerfile-dist-temp .docker/php/Dockerfile-dist
+    - build
+  only:
+    - branches
+
+
+code_quality_PSR-12:
+  stage: test
+  image: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG/php:latest
+  variables:
+    GIT_STRATEGY: fetch
+  script:
+    - wget https://squizlabs.github.io/PHP_CodeSniffer/phpcs.phar
+    - cp .docker/phpcs/* .
+    - php phpcs.phar --error-severity=1 --warning-severity=8 --extensions=php
+  only:
+    - branches
+
+
+code_quality_gitlab:
+  stage: test
+  image: docker:stable
+  allow_failure: true
+  services:
+    - docker:stable-dind
+  variables:
+    GIT_STRATEGY: fetch
+  script:
+    - setup_docker
+    - code_quality
+  artifacts:
+    paths: [gl-code-quality-report.json]
+  only:
+    - branches
+
+
+unit_testing:
+  stage: test
+  image: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG/php-dev:latest
+  script:
+    - cd $WWW_DATA_DIR
+    - if [[ -f bin/phpunit ]]; then
+        php bin/phpunit;
+      else
+        wget -O phpunit https://phar.phpunit.de/phpunit-7.phar;
+        chmod +x phpunit;
+        ./phpunit tests;
+      fi
+  only:
+    - branches
+
+staging:
+  stage: deploy
+  image: arvindr226/alpine-ssh
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - > /dev/null
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan $DEVOPS_SERVER >> gitlab-known-hosts
+    - cat gitlab-known-hosts >> ~/.ssh/known_hosts
+  script:
+    - ssh $DEVOPS_SERVER_USERNAME@$DEVOPS_SERVER "cd ~/docker-sites/staging.$PROJECT && docker-compose pull && docker-compose up -d"
+  environment:
+    name: staging
+    url: https://staging.$DEVOPS_DOMAIN
+  only:
+    - staging
+
+production:
+  stage: deploy
+  image: arvindr226/alpine-ssh
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - > /dev/null
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan $DEVOPS_SERVER >> gitlab-known-hosts
+    - cat gitlab-known-hosts >> ~/.ssh/known_hosts
+  script:
+    - ssh $DEVOPS_SERVER_USERNAME@$DEVOPS_SERVER "cd ~/docker-sites/www.$PROJECT && docker-compose pull && docker-compose up -d"
+  environment:
+    name: production
+    url: https://www.$DEVOPS_DOMAIN
+  only:
+    - master
+
+# ---------------------------------------------------------------------------
+.auto_devops: &auto_devops |
+  # Auto DevOps variables and functions
+  export CI_APPLICATION_REPOSITORY=$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG
+
+  BLUE='\033[0;34m'
+  NC='\033[0m'
+
+  function registry_login() {
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+      echo ""
+    fi
+  }
+
+  function setup_docker() {
+    if ! docker info &>/dev/null; then
+      if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+        echo ********************3;
+        export DOCKER_HOST='tcp://localhost:2375'
+      fi
+    fi
+  }
+
+  function build() {
+    registry_login
+
+    export DOCKER_IMAGE_NAME="$CI_APPLICATION_REPOSITORY/nginx"
+    echo -e "${BLUE}Building Dockerfile-based application - $DOCKER_IMAGE_NAME ...${NC}"
+    docker pull $DOCKER_IMAGE_NAME:latest || true
+    docker build --cache-from $DOCKER_IMAGE_NAME:latest --file .docker/nginx/Dockerfile-prod --tag $DOCKER_IMAGE_NAME:latest --tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA .
+    docker push $DOCKER_IMAGE_NAME:latest
+
+    echo ""
+
+    export DOCKER_IMAGE_NAME="$CI_APPLICATION_REPOSITORY/php-dev"
+    echo -e "${BLUE}Building Dockerfile-based application - $DOCKER_IMAGE_NAME ...${NC}"
+    docker pull $DOCKER_IMAGE_NAME:latest || true
+    docker build --cache-from $DOCKER_IMAGE_NAME:latest --file .docker/php/Dockerfile-dist --build-arg APP_ENV=dev --tag $DOCKER_IMAGE_NAME:latest --tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA .
+    docker push $DOCKER_IMAGE_NAME:latest
+    echo ""
+
+    export DOCKER_IMAGE_NAME="$CI_APPLICATION_REPOSITORY/php"
+    echo -e "${BLUE}Building Dockerfile-based application - $DOCKER_IMAGE_NAME ...${NC}"
+    docker pull $DOCKER_IMAGE_NAME:latest || true
+    docker build --cache-from $DOCKER_IMAGE_NAME:latest --file .docker/php/Dockerfile-dist --build-arg APP_ENV=prod --tag $DOCKER_IMAGE_NAME:latest --tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA .
+    docker push $DOCKER_IMAGE_NAME:latest
+    echo ""
+
+  }
+
+  function code_quality() {
+    docker run --env SOURCE_CODE="$PWD" \
+               --volume "$PWD":/code \
+               --volume /var/run/docker.sock:/var/run/docker.sock \
+               "registry.gitlab.com/gitlab-org/security-products/codequality" /code
+  }
+
+before_script:
+  - *auto_devops
+

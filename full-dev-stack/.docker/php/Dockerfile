@@ -3,6 +3,8 @@ FROM php:fpm-alpine
 
 LABEL maintainer="Petr Zivny | Totea (zivny@totea.cz)"
 
+ARG APP_ENV
+
 RUN apk update && apk upgrade                       && \
     apk add --no-cache --virtual .build-dependencies   \
         $PHPIZE_DEPS                                && \
@@ -28,8 +30,7 @@ RUN apk update                                          && \
     docker-php-ext-configure opcache --enable-opcache   && \
     docker-php-ext-install opcache                      && \
     rm -rf /var/cache/apk/*
-COPY .docker/php/conf.d/00-opcache-recommended.ini /usr/local/etc/php/conf.d/00-opcache-recommended.ini
-RUN if [ "x$APP_ENV" = "xprod" ]; then sed -i '/opcache.validate_timestamps=0/s/^# *//' /usr/local/etc/php/conf.d/00-opcache-recommended.ini; fi
+COPY .docker/php/conf.d/00-opcache-recommended-$APP_ENV.ini /usr/local/etc/php/conf.d/00-opcache.ini
 
 # APCu
 RUN apk --update add --virtual .build-dependencies autoconf g++ make    && \
@@ -56,17 +57,17 @@ RUN apk update                                                          && \
 #    docker-php-ext-install -j"$(getconf _NPROCESSORS_ONLN)" mysqli  && \
 #    rm -rf /var/cache/apk/*
 
-# Redis
-ARG PHPREDIS_VERSION="${PHPREDIS_VERSION:-4.1.1}"
-ENV PHPREDIS_VERSION="${PHPREDIS_VERSION}"
-ADD https://github.com/phpredis/phpredis/archive/${PHPREDIS_VERSION}.tar.gz /tmp/
-RUN apk update && \
-    docker-php-source extract                                       && \
-    tar xfz /tmp/${PHPREDIS_VERSION}.tar.gz  -C /tmp                && \
-    mv /tmp/phpredis-$PHPREDIS_VERSION /usr/src/php/ext/redis       && \
-    docker-php-ext-install -j"$(getconf _NPROCESSORS_ONLN)" redis   && \
-    docker-php-source delete        && \
-    rm -rf /tmp/* /var/cache/apk/*
+## Redis
+#ARG PHPREDIS_VERSION="${PHPREDIS_VERSION:-4.1.1}"
+#ENV PHPREDIS_VERSION="${PHPREDIS_VERSION}"
+#ADD https://github.com/phpredis/phpredis/archive/${PHPREDIS_VERSION}.tar.gz /tmp/
+#RUN apk update && \
+#    docker-php-source extract                                       && \
+#    tar xfz /tmp/${PHPREDIS_VERSION}.tar.gz  -C /tmp                && \
+#    mv /tmp/phpredis-$PHPREDIS_VERSION /usr/src/php/ext/redis       && \
+#    docker-php-ext-install -j"$(getconf _NPROCESSORS_ONLN)" redis   && \
+#    docker-php-source delete        && \
+#    rm -rf /tmp/* /var/cache/apk/*
 
 ## Memcached
 #RUN apk --update add --virtual .build-dependencies git autoconf g++ make zlib-dev                               && \
@@ -130,8 +131,6 @@ RUN apk --update add icu-dev                                        && \
 #    docker-php-ext-install -j"$(getconf _NPROCESSORS_ONLN)" gd                                  && \
 #    rm -rf /var/cache/apk/*
 
-
-ARG APP_ENV
 
 # Development environment only (or fresh install)
 RUN if [ "x$APP_ENV" = "xdev" ] || [ "x$APP_ENV" = "x" ]; then                      \

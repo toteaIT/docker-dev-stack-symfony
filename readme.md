@@ -17,11 +17,13 @@ git init
 git remote add dockerimage https://github.com/toteaIT/docker-dev-stack-symfony.git
 git pull dockerimage master
 ```
-##### 2. Build docker images (this will take few minutes during first run, next run is in seconds)  
+##### 2. Move all files from /full-dev-stack to app directory, delete 
 ```bash
-docker-compose build
+cp -r full-dev-stack/* full-dev-stack/.* . 
+rm -rf full-dev-stack server-dev
 ```
-##### 3. Run docker containers with your project name as variable
+##### 3. Build docker images and start docker containers with your project name as variable
+(this will take few minutes during first run, next time it will be only seconds)
 ```bash
 COMPOSE_PROJECT_NAME=myproject docker-compose up -d
 ```
